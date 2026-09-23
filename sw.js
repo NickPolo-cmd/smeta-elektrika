@@ -3,8 +3,12 @@
  * дальше страница открывается и без интернета. Данные хранит сама программа
  * в базе телефона, здесь только файлы оболочки.
  */
-const CACHE = 'smeta-shell-v1'
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png']
+const CACHE = 'smeta-shell-v2'
+
+// Приложение может лежать и в корне сайта, и в подпапке — берём адрес самого работника.
+const BASE = new URL('./', self.location.href).pathname
+const HOME = `${BASE}index.html`
+const SHELL = [BASE, HOME, `${BASE}manifest.webmanifest`, `${BASE}icon-192.png`, `${BASE}icon-512.png`]
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()))
@@ -29,10 +33,10 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       fetch(req)
         .then((res) => {
-          caches.open(CACHE).then((c) => c.put('/index.html', res.clone()))
+          caches.open(CACHE).then((c) => c.put(HOME, res.clone()))
           return res
         })
-        .catch(() => caches.match('/index.html').then((r) => r || Response.error())),
+        .catch(() => caches.match(HOME).then((r) => r || Response.error())),
     )
     return
   }
