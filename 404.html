@@ -41,11 +41,90 @@
       content="Объекты, сметы, PDF и Excel. На телефоне, без интернета."
     />
     <meta name="twitter:image" content="https://nickpolo-cmd.github.io/smeta-elektrika/og.jpg" />
-    <script type="module" crossorigin src="/smeta-elektrika/assets/index-CrRRh2VY.js"></script>
+    <script type="module" crossorigin src="/smeta-elektrika/assets/index-CGWDpD6I.js"></script>
     <link rel="modulepreload" crossorigin href="/smeta-elektrika/assets/rolldown-runtime-Dd_uD5pT.js">
-    <link rel="stylesheet" crossorigin href="/smeta-elektrika/assets/index-BQPefrLA.css">
+    <link rel="stylesheet" crossorigin href="/smeta-elektrika/assets/index-BkVul6rO.css">
   </head>
   <body>
     <div id="root"></div>
+    <!-- Страховка от белого экрана (29.09.2026). Работает сама по себе, без основного скрипта:
+         если он не загрузился (например, на телефоне осталась старая копия страницы) или за
+         20 секунд ничего не появилось — показывает кнопку «Починить». Как только приложение
+         запустилось, сообщение убирается. Без интернета кэш не трогаем: только перезагрузка. -->
+    <script>
+      (function () {
+        var started = Date.now()
+        var failed = false
+        var box = null
+
+        function repair() {
+          var reload = function () { location.reload() }
+          if (navigator.onLine === false) return reload()
+          var jobs = []
+          try {
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (list) {
+                return Promise.all(list.map(function (r) { return r.unregister() }))
+              }))
+            }
+            if (window.caches && caches.keys) {
+              jobs.push(caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) { return caches.delete(k) }))
+              }))
+            }
+          } catch (e) {
+            /* службы или кэша нет — чинить нечего, просто перезагрузим страницу */
+          }
+          Promise.all(jobs).then(reload, reload)
+        }
+
+        function show() {
+          if (box || !document.body) return
+          var offline = navigator.onLine === false
+          box = document.createElement('div')
+          box.setAttribute('role', 'alert')
+          box.style.cssText =
+            'position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483647;max-width:480px;' +
+            'margin:0 auto;padding:16px;border-radius:12px;background:#171C21;color:#fff;' +
+            'font:15px/1.45 -apple-system,system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.35)'
+          var title = document.createElement('div')
+          title.style.cssText = 'font-weight:700;font-size:17px;margin-bottom:6px'
+          title.textContent = 'Приложение не запустилось'
+          var text = document.createElement('div')
+          text.style.cssText = 'margin-bottom:12px;opacity:.9'
+          text.textContent = offline
+            ? 'Нет интернета. Подключитесь к сети и нажмите «Повторить».'
+            : 'Возможно, на телефоне осталась старая копия. Нажмите «Починить». Объекты и сметы не пропадут — они хранятся отдельно.'
+          var button = document.createElement('button')
+          button.type = 'button'
+          button.textContent = offline ? 'Повторить' : 'Починить'
+          button.style.cssText =
+            'min-height:44px;padding:8px 20px;border:0;border-radius:10px;background:#fff;color:#171C21;' +
+            'font:600 16px -apple-system,system-ui,sans-serif;cursor:pointer'
+          button.addEventListener('click', repair)
+          box.appendChild(title)
+          box.appendChild(text)
+          box.appendChild(button)
+          document.body.appendChild(box)
+        }
+
+        // Не загрузился скрипт приложения (пропал файл, оборвалась связь).
+        window.addEventListener('error', function (e) {
+          var t = e.target
+          if (t && t.tagName === 'SCRIPT') failed = true
+        }, true)
+
+        var timer = setInterval(function () {
+          var root = document.getElementById('root')
+          if (root && root.firstChild) {
+            // Приложение запустилось: сообщение больше не нужно.
+            if (box && box.parentNode) box.parentNode.removeChild(box)
+            clearInterval(timer)
+          } else if (failed || Date.now() - started > 20000) {
+            show()
+          }
+        }, 1000)
+      })()
+    </script>
   </body>
 </html>
