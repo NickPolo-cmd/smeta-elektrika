@@ -14,9 +14,9 @@
  */
 
 // Три «метки» ниже сборка заменяет настоящими значениями (в режиме разработки остаются как есть).
-const BUILD = "83527ef778"
-const CORE = /*__CORE__*/ ["assets/index-BG995vGb.css","assets/index-BHBWyLCD.js","assets/rolldown-runtime-Dd_uD5pT.js"]
-const EXTRA = /*__EXTRA__*/ ["apple-touch-icon.png","assets/GolosText-400-cyr-BhLd7jiz.woff2","assets/GolosText-400-lat-CeRm3aSN.woff2","assets/Unbounded-600-cyr-CMRaHTP9.woff2","assets/Unbounded-600-lat-D6nRMoFF.woff2","assets/jszip.min-B4TBn35v.js","assets/logo-CgnWua25.png","assets/logo-light-Cwq8FPU8.png","assets/xlsx-DADayHkv.js","favicon.ico","icon-192.png","icon-512.png","images/3d/i01.webp","images/3d/i02.webp","images/3d/i03.webp","images/3d/i04.webp","images/3d/i05.webp","images/3d/i06.webp","images/3d/i07.webp","images/3d/i08.webp","images/3d/i09.webp","images/3d/i10.webp","images/3d/i11.webp","images/3d/i12.webp","images/3d/i13.webp","images/3d/i14.webp","images/3d/i15.webp","images/3d/i16.webp","images/3d/i17.webp","images/3d/i18.webp","images/3d/i19.webp","images/3d/i20.webp","images/3d/i21.webp","images/3d/i22.webp","images/3d/i23.webp","images/3d/i24.webp","images/3d/i25.webp","images/3d/i26.webp","images/3d/i27.webp","images/3d/i28.webp","images/3d/i29.webp","images/3d/i30.webp","images/3d/i31.webp","images/3d/i32.webp","images/3d/i33.webp","images/3d/i34.webp","images/3d/i35.webp","images/3d/i36.webp","images/3d/i37.webp","images/3d/i38.webp","images/3d/i39.webp","images/3d/i40.webp","images/3d/i41.webp","images/3d/i42.webp","images/3d/i43.webp","images/3d/i44.webp","images/3d/i45.webp","images/3d/i46.webp","images/3d/i47.webp","images/3d/i48.webp","images/3d/i49.webp","images/3d/i50.webp","images/empty-consumers.jpg","images/empty-materials.jpg","images/empty-objects.jpg","images/empty-recommendations.jpg","images/empty-techcards.jpg","images/header-electric.jpg","images/header-objects.jpg","images/header-regulatory.jpg","images/header-safety.jpg","images/header-schemes.jpg","manifest.webmanifest"]
+const BUILD = "7f98b26f0b"
+const CORE = /*__CORE__*/ ["assets/index-BG995vGb.css","assets/index-CYZrd9oZ.js","assets/rolldown-runtime-Dd_uD5pT.js"]
+const EXTRA = /*__EXTRA__*/ ["apple-touch-icon.png","assets/GolosText-400-cyr-BhLd7jiz.woff2","assets/GolosText-400-lat-CeRm3aSN.woff2","assets/Unbounded-600-cyr-CMRaHTP9.woff2","assets/Unbounded-600-lat-D6nRMoFF.woff2","assets/jszip.min-B4TBn35v.js","assets/logo-CgnWua25.png","assets/logo-light-Cwq8FPU8.png","assets/xlsx-DYg0JEMi.js","favicon.ico","icon-192.png","icon-512.png","images/3d/i01.webp","images/3d/i02.webp","images/3d/i03.webp","images/3d/i04.webp","images/3d/i05.webp","images/3d/i06.webp","images/3d/i07.webp","images/3d/i08.webp","images/3d/i09.webp","images/3d/i10.webp","images/3d/i11.webp","images/3d/i12.webp","images/3d/i13.webp","images/3d/i14.webp","images/3d/i15.webp","images/3d/i16.webp","images/3d/i17.webp","images/3d/i18.webp","images/3d/i19.webp","images/3d/i20.webp","images/3d/i21.webp","images/3d/i22.webp","images/3d/i23.webp","images/3d/i24.webp","images/3d/i25.webp","images/3d/i26.webp","images/3d/i27.webp","images/3d/i28.webp","images/3d/i29.webp","images/3d/i30.webp","images/3d/i31.webp","images/3d/i32.webp","images/3d/i33.webp","images/3d/i34.webp","images/3d/i35.webp","images/3d/i36.webp","images/3d/i37.webp","images/3d/i38.webp","images/3d/i39.webp","images/3d/i40.webp","images/3d/i41.webp","images/3d/i42.webp","images/3d/i43.webp","images/3d/i44.webp","images/3d/i45.webp","images/3d/i46.webp","images/3d/i47.webp","images/3d/i48.webp","images/3d/i49.webp","images/3d/i50.webp","images/empty-consumers.jpg","images/empty-materials.jpg","images/empty-objects.jpg","images/empty-recommendations.jpg","images/empty-techcards.jpg","images/header-electric.jpg","images/header-objects.jpg","images/header-regulatory.jpg","images/header-safety.jpg","images/header-schemes.jpg","manifest.webmanifest"]
 
 const CACHE_PREFIX = 'smeta-shell-'
 const CACHE = CACHE_PREFIX + BUILD
@@ -25,6 +25,8 @@ const CACHE = CACHE_PREFIX + BUILD
 const BASE = new URL('./', self.location.href).pathname
 const HOME = `${BASE}index.html`
 const ASSETS = `${BASE}assets/`
+// Сервер может добавить «Vary: Origin»; из-за него офлайн кэш не находил скрипты. Файлы те же — Vary не учитываем.
+const MATCH = { ignoreVary: true }
 
 self.addEventListener('install', (e) => {
   e.waitUntil(precache().then(() => self.skipWaiting()))
@@ -68,7 +70,7 @@ async function precache() {
 async function store(cache, url) {
   // Файл с хэшем в названии не меняется: если он уже лежит в кэше прошлой версии, заново не качаем.
   if (url.startsWith(ASSETS)) {
-    const have = await caches.match(url)
+    const have = await caches.match(url, MATCH)
     if (have) return cache.put(url, have)
   }
   const res = await fetch(url, { cache: 'reload' })
@@ -91,12 +93,12 @@ async function openPage() {
   } catch {
     // Нет сети — ниже берём страницу, сохранённую при установке.
   }
-  const saved = await caches.match(HOME)
+  const saved = await caches.match(HOME, MATCH)
   return saved || res || Response.error()
 }
 
 async function cacheFirst(req, e) {
-  const hit = await caches.match(req)
+  const hit = await caches.match(req, MATCH)
   if (hit) return hit
   const res = await fetch(req)
   if (res.ok) e.waitUntil(caches.open(CACHE).then((c) => c.put(req, res.clone())))
@@ -106,7 +108,7 @@ async function cacheFirst(req, e) {
 /** Значки, картинки, манифест: отдаём то, что есть, и обновляем в фоне. */
 async function staleWhileRevalidate(req, e) {
   const cache = await caches.open(CACHE)
-  const hit = await cache.match(req)
+  const hit = await cache.match(req, MATCH)
   const update = fetch(req).then(
     (res) => {
       if (res.ok) cache.put(req, res.clone())
