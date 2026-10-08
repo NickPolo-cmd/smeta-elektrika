@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Перенос данных</title>
+<style>body{font:16px/1.4 system-ui,sans-serif;margin:0;padding:24px;color:#1b1b1b;background:#fff}h1{font-size:20px;margin:0 0 12px}p{margin:8px 0}</style>
+</head>
+<body>
+<h1>Перенос данных в новое приложение</h1>
+<p id="s">Жду команды от нового приложения…</p>
+<p style="color:#666;font-size:13px">Данные передаются только на polodigital.ru и остаются у вас на устройстве. Здесь ничего не удаляется.</p>
+<script>
+(function () {
+  var NEW_ORIGIN = 'https://polodigital.ru';
+  var SKIP = { outbox: 1, conflicts: 1, syncBase: 1 };
+  var SECRETS = ['diskToken', 'pinHash'];
+  var s = document.getElementById('s');
+  function say(t) { s.textContent = t; }
+  function send(m) { window.opener.postMessage(m, NEW_ORIGIN); }
+  if (!window.opener) { say('Откройте эту страницу кнопкой «Перенести со старого адреса» в новом приложении.'); return; }
+  window.addEventListener('message', function (e) {
+    if (e.origin !== NEW_ORIGIN || !e.data || e.data.t !== 'go') return;
+    run().catch(function (err) { try { send({ t: 'error', text: String(err && err.message || err) }); } catch (_) {} say('Ошибка: ' + (err && err.message || err)); });
+  });
+  send({ t: 'hello' });
+
+  function exists() {
+    if (!indexedDB.databases) return Promise.resolve(true);
+    return indexedDB.databases().then(function (l) { return l.some(function (d) { return d.name === 'smeta-elektrika'; }); });
+  }
+  function open() {
+    return new Promise(function (ok, bad) {
+      var r = indexedDB.open('smeta-elektrika');
+      r.onsuccess = function () { ok(r.result); };
+      r.onerror = function () { bad(r.error); };
+    });
+  }
+  function readAll(db, name) {
+    return new Promise(function (ok, bad) {
+      var r = db.transaction(name, 'readonly').objectStore(name).getAll();
+      r.onsuccess = function () { ok(r.result); };
+      r.onerror = function () { bad(r.error); };
+    });
+  }
+  function run() {
+    return exists().then(function (yes) {
+      if (!yes) { send({ t: 'empty' }); say('На этом адресе нет данных.'); return; }
+      return open().then(function (db) {
+        var names = Array.prototype.slice.call(db.objectStoreNames).filter(function (n) { return !SKIP[n]; });
+        if (!names.length) { db.close(); send({ t: 'empty' }); say('На этом адресе нет данных.'); return; }
+        var total = 0;
+        var chain = Promise.resolve();
+        names.forEach(function (name) {
+          chain = chain.then(function () { return readAll(db, name); }).then(function (rows) {
+            if (name === 'settings') rows.forEach(function (r) { SECRETS.forEach(function (k) { delete r[k]; }); });
+            var step = name === 'fileBlobs' ? 10 : 400;
+            for (var i = 0; i < rows.length; i += step) {
+              send({ t: 'rows', name: name, rows: rows.slice(i, i + step) });
+            }
+            total += rows.length;
+            say('Передано записей: ' + total);
+          });
+        });
+        return chain.then(function () {
+          db.close();
+          send({ t: 'done' });
+          say('Готово: передано записей — ' + total + '. Окно закроется само.');
+        });
+      });
+    });
+  }
+})();
+</script>
+</body>
+</html>
