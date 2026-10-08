@@ -5,32 +5,50 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Перенос данных</title>
-<style>body{font:16px/1.4 system-ui,sans-serif;margin:0;padding:24px;color:#1b1b1b;background:#fff}h1{font-size:20px;margin:0 0 12px}p{margin:8px 0}</style>
+<style>body{font:16px/1.4 system-ui,sans-serif;margin:0;padding:24px;color:#1b1b1b;background:#fff}h1{font-size:20px;margin:0 0 12px}p{margin:8px 0}button{font:inherit;padding:10px 16px;margin-top:12px}</style>
 </head>
 <body>
 <h1>Перенос данных в новое приложение</h1>
-<p id="s">Жду команды от нового приложения…</p>
-<p style="color:#666;font-size:13px">Данные передаются только на polodigital.ru и остаются у вас на устройстве. Здесь ничего не удаляется.</p>
+<p id="s">Готовлю…</p>
+<button id="b" hidden onclick="location.reload()">Повторить</button>
+<p style="color:#666;font-size:13px">Данные передаются только на ваш сайт polodigital.ru. Здесь ничего не удаляется.</p>
 <script>
 (function () {
-  var NEW_ORIGIN = 'https://polodigital.ru';
+  var NEW = 'https://polodigital.ru/smeta-elektrika/';
   var SKIP = { outbox: 1, conflicts: 1, syncBase: 1 };
   var SECRETS = ['diskToken', 'pinHash'];
+  var LIMIT = 1200000;
   var s = document.getElementById('s');
   function say(t) { s.textContent = t; }
-  function send(m) { window.opener.postMessage(m, NEW_ORIGIN); }
-  if (!window.opener) { say('Откройте эту страницу кнопкой «Перенести со старого адреса» в новом приложении.'); return; }
-  window.addEventListener('message', function (e) {
-    if (e.origin !== NEW_ORIGIN || !e.data || e.data.t !== 'go') return;
-    run().catch(function (err) { try { send({ t: 'error', text: String(err && err.message || err) }); } catch (_) {} say('Ошибка: ' + (err && err.message || err)); });
-  });
-  send({ t: 'hello' });
+  function fail(e) { say('Не получилось: ' + (e && e.message || e)); document.getElementById('b').hidden = false; }
+  var code = new URLSearchParams(location.search).get('to') || '';
+  if (!/^[0-9a-f]{24}$/.test(code)) { say('Откройте эту страницу по ссылке переноса из нового приложения: ' + NEW + 'backup?perenos=1'); return; }
+  var api = NEW + 'api/stage/';
 
-  function exists() {
-    if (!indexedDB.databases) return Promise.resolve(true);
-    return indexedDB.databases().then(function (l) { return l.some(function (d) { return d.name === 'smeta-elektrika'; }); });
+  function b64(blob) {
+    return new Promise(function (ok, bad) {
+      var r = new FileReader();
+      r.onload = function () { var d = String(r.result); ok(d.slice(d.indexOf(',') + 1)); };
+      r.onerror = function () { bad(r.error); };
+      r.readAsDataURL(blob);
+    });
   }
-  function open() {
+  // Blob и дата не переживают JSON: превращаем в служебные значения (обратно их собирает новое приложение).
+  function enc(v) {
+    if (v instanceof Blob) return b64(v).then(function (d) { return { __blob: d, type: v.type }; });
+    if (v instanceof Date) return Promise.resolve({ __date: v.toISOString() });
+    if (v instanceof ArrayBuffer) return enc(new Blob([v]));
+    if (ArrayBuffer.isView(v)) return enc(new Blob([v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength)]));
+    if (Array.isArray(v)) return Promise.all(v.map(enc));
+    if (v && typeof v === 'object') {
+      var keys = Object.keys(v);
+      return Promise.all(keys.map(function (k) { return enc(v[k]); })).then(function (vals) {
+        var o = {}; keys.forEach(function (k, i) { o[k] = vals[i]; }); return o;
+      });
+    }
+    return Promise.resolve(v);
+  }
+  function idb() {
     return new Promise(function (ok, bad) {
       var r = indexedDB.open('smeta-elektrika');
       r.onsuccess = function () { ok(r.result); };
@@ -44,33 +62,51 @@
       r.onerror = function () { bad(r.error); };
     });
   }
+  var n = 0, total = 0;
+  function put(name, rows) {
+    return enc(rows).then(function (encoded) {
+      return fetch(api + 'put?code=' + code + '&n=' + (n++), {
+        method: 'POST', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ name: name, rows: encoded })
+      });
+    }).then(function (r) { if (!r.ok) throw new Error('сервер принял не всё (ответ ' + r.status + ')'); total += rows.length; say('Передано записей: ' + total); });
+  }
+  function sendStore(db, name) {
+    return readAll(db, name).then(function (rows) {
+      if (name === 'settings') rows.forEach(function (r) { SECRETS.forEach(function (k) { delete r[k]; }); });
+      var chain = Promise.resolve(), batch = [], size = 0;
+      function flush() { var b = batch; batch = []; size = 0; return b.length ? put(name, b) : Promise.resolve(); }
+      rows.forEach(function (row) {
+        chain = chain.then(function () {
+          var approx = row && row.blob && row.blob.size ? row.blob.size * 1.4 : JSON.stringify(row).length;
+          var pre = (size + approx > LIMIT && batch.length) ? flush() : Promise.resolve();
+          return pre.then(function () { batch.push(row); size += approx; });
+        });
+      });
+      return chain.then(flush);
+    });
+  }
   function run() {
-    return exists().then(function (yes) {
-      if (!yes) { send({ t: 'empty' }); say('На этом адресе нет данных.'); return; }
-      return open().then(function (db) {
-        var names = Array.prototype.slice.call(db.objectStoreNames).filter(function (n) { return !SKIP[n]; });
-        if (!names.length) { db.close(); send({ t: 'empty' }); say('На этом адресе нет данных.'); return; }
-        var total = 0;
+    var exists = indexedDB.databases ? indexedDB.databases().then(function (l) { return l.some(function (d) { return d.name === 'smeta-elektrika'; }); }) : Promise.resolve(true);
+    return exists.then(function (yes) {
+      if (!yes) return 0;
+      return idb().then(function (db) {
+        var names = Array.prototype.slice.call(db.objectStoreNames).filter(function (x) { return !SKIP[x]; });
         var chain = Promise.resolve();
-        names.forEach(function (name) {
-          chain = chain.then(function () { return readAll(db, name); }).then(function (rows) {
-            if (name === 'settings') rows.forEach(function (r) { SECRETS.forEach(function (k) { delete r[k]; }); });
-            var step = name === 'fileBlobs' ? 10 : 400;
-            for (var i = 0; i < rows.length; i += step) {
-              send({ t: 'rows', name: name, rows: rows.slice(i, i + step) });
-            }
-            total += rows.length;
-            say('Передано записей: ' + total);
-          });
-        });
-        return chain.then(function () {
-          db.close();
-          send({ t: 'done' });
-          say('Готово: передано записей — ' + total + '. Окно закроется само.');
-        });
+        names.forEach(function (nm) { chain = chain.then(function () { return sendStore(db, nm); }); });
+        return chain.then(function () { db.close(); return total; });
       });
     });
   }
+  say('Читаю данные этого браузера…');
+  run().then(function (count) {
+    return fetch(api + 'done?code=' + code + '&n=' + n, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: '{}' })
+      .then(function (r) { if (!r.ok && n > 0) throw new Error('не удалось завершить передачу'); })
+      .then(function () {
+        say(count ? 'Готово: передано записей — ' + count + '. Возвращаю в новое приложение…' : 'Здесь данных нет. Возвращаю в новое приложение…');
+        setTimeout(function () { location.replace(NEW + 'backup?perenos=' + code + (count ? '' : '&empty=1')); }, 600);
+      });
+  }).catch(fail);
 })();
 </script>
 </body>
