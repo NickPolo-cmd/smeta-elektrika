@@ -8,8 +8,14 @@
 <style>body{font:16px/1.4 system-ui,sans-serif;margin:0;padding:24px;color:#1b1b1b;background:#fff}h1{font-size:20px;margin:0 0 12px}p{margin:8px 0}button{font:inherit;padding:10px 16px;margin-top:12px}</style>
 </head>
 <body>
-<h1>Перенос данных в новое приложение</h1>
-<p id="s">Готовлю…</p>
+<div id="exp" hidden>
+<h1>Выгрузить все объекты в архив</h1>
+<p id="cnt">Считаю данные в этом браузере…</p>
+<button id="dl" style="font-size:18px;padding:14px 20px;width:100%;background:#0f6b5f;color:#fff;border:0;border-radius:10px" disabled>Выгрузить все объекты в архив</button>
+<p id="es" style="margin-top:12px"></p>
+<p style="color:#666;font-size:13px">Файл сохранится на устройство (в «Загрузки»). Потом в новом приложении: «Ещё → Резервная копия → Выбрать архив → Восстановить».</p>
+</div>
+<p id="s"></p>
 <button id="b" hidden onclick="location.reload()">Повторить</button>
 <p style="color:#666;font-size:13px">Данные передаются только на ваш сайт polodigital.ru. Здесь ничего не удаляется.</p>
 <script>
@@ -21,8 +27,72 @@
   var s = document.getElementById('s');
   function say(t) { s.textContent = t; }
   function fail(e) { say('Не получилось: ' + (e && e.message || e)); document.getElementById('b').hidden = false; }
+
+  /* ───── Выгрузка в архив ZIP (без сжатия, формат совпадает с «Резервной копией» нового приложения) ───── */
+  function exportMode() {
+    document.getElementById('exp').hidden = false;
+    var btn = document.getElementById('dl'), cnt = document.getElementById('cnt'), es = document.getElementById('es');
+    var KEEP = { outbox: 1, conflicts: 1, syncBase: 1 };
+    var crcT = (function () { var t = [], c, n, k; for (n = 0; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+    function crc(u8) { var c = 0xFFFFFFFF; for (var i = 0; i < u8.length; i++) c = crcT[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+    function u16(n) { return [n & 255, (n >>> 8) & 255]; }
+    function u32(n) { return [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]; }
+    function zip(entries) {
+      var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+      entries.forEach(function (e) {
+        var name = enc.encode(e.name), c = crc(e.data), sz = e.data.length;
+        var head = new Uint8Array([0x50, 0x4b, 3, 4, 20, 0, 0, 8, 0, 0, 0, 0, 0x21, 0].concat(u32(c), u32(sz), u32(sz), u16(name.length), [0, 0]));
+        parts.push(head, name, e.data);
+        central.push(new Uint8Array([0x50, 0x4b, 1, 2, 20, 0, 20, 0, 0, 8, 0, 0, 0, 0, 0x21, 0].concat(u32(c), u32(sz), u32(sz), u16(name.length), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], u32(offset))), name);
+        offset += head.length + name.length + sz;
+      });
+      var csize = 0; central.forEach(function (p) { csize += p.length; });
+      var end = new Uint8Array([0x50, 0x4b, 5, 6, 0, 0, 0, 0].concat(u16(entries.length), u16(entries.length), u32(csize), u32(offset), [0, 0]));
+      return new Blob(parts.concat(central, [end]), { type: 'application/zip' });
+    }
+    function names(db) { return Array.prototype.slice.call(db.objectStoreNames).filter(function (x) { return !KEEP[x]; }); }
+    var dbp = (indexedDB.databases ? indexedDB.databases().then(function (l) { return l.some(function (d) { return d.name === 'smeta-elektrika'; }); }) : Promise.resolve(true))
+      .then(function (yes) { return yes ? idb() : null; });
+    dbp.then(function (db) {
+      if (!db) { cnt.textContent = 'В этом браузере данных этого приложения нет. Откройте ссылку в том браузере, где вы вели объекты.'; return; }
+      return readAll(db, 'objects').then(function (o) { return readAll(db, 'files').then(function (f) {
+        cnt.textContent = 'Найдено: объектов — ' + o.length + ', файлов (фото, документов) — ' + f.length + '.';
+        btn.disabled = false;
+        btn.onclick = function () {
+          btn.disabled = true; es.textContent = 'Собираю архив…';
+          var data = {}, counts = {}, chain = Promise.resolve();
+          names(db).forEach(function (nm) { chain = chain.then(function () { return readAll(db, nm); }).then(function (rows) {
+            if (nm === 'settings') rows.forEach(function (r) { SECRETS.forEach(function (k) { delete r[k]; }); });
+            if (nm !== 'fileBlobs') { data[nm] = rows; counts[nm] = rows.length; } else data.__blobs = rows;
+          }); });
+          chain.then(function () {
+            var enc = new TextEncoder(), entries = [];
+            var json = JSON.stringify({ info: { version: 1, createdAt: new Date().toISOString(), counts: counts }, data: data }, null, 1);
+            entries.push({ name: 'данные.json', data: enc.encode(json) });
+            var fnames = {}; (data.files || []).forEach(function (f) { fnames[f.id] = f.fileName || 'файл'; });
+            var blobs = data.__blobs || [], p = Promise.resolve(), i = 0;
+            blobs.forEach(function (b) { p = p.then(function () { return b.blob.arrayBuffer(); }).then(function (ab) {
+              i++; es.textContent = 'Складываю файлы: ' + i + ' из ' + blobs.length;
+              entries.push({ name: 'файлы/' + b.fileId + '__' + (fnames[b.fileId] || 'файл'), data: new Uint8Array(ab) });
+            }); });
+            return p.then(function () { return zip(entries); });
+          }).then(function (blob) {
+            var d = new Date(), z = function (n) { return String(n).padStart(2, '0'); };
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'Смета-копия_' + d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + '_' + z(d.getHours()) + '-' + z(d.getMinutes()) + '.zip';
+            document.body.appendChild(a); a.click();
+            es.textContent = 'Готово: архив сохранён на устройство (' + Math.round(blob.size / 1024) + ' КБ). Ищите в «Загрузки».';
+            btn.disabled = false;
+          }).catch(function (e) { es.textContent = 'Не получилось: ' + (e && e.message || e); btn.disabled = false; });
+        };
+      }); });
+    }).catch(function (e) { cnt.textContent = 'Не удалось прочитать данные: ' + (e && e.message || e); });
+  }
+
   var code = new URLSearchParams(location.search).get('to') || '';
-  if (!/^[0-9a-f]{24}$/.test(code)) { say('Откройте эту страницу по ссылке переноса из нового приложения: ' + NEW + 'backup?perenos=1'); return; }
+  if (!/^[0-9a-f]{24}$/.test(code)) { exportMode(); return; }
+  document.querySelector('h1') || document.body.insertAdjacentHTML('afterbegin', '<h1>Перенос данных в новое приложение</h1>');
   var api = NEW + 'api/stage/';
 
   function b64(blob) {
